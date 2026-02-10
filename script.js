@@ -110,15 +110,36 @@ async function saveNoteAPI(noteData) {
 
 async function deleteNoteAPI(id) {
     try {
+        console.log('Удаляем заметку ID:', id);
+        
         const response = await fetch(`${CONFIG.API_URL}/${id}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            }
         });
         
-        if (!response.ok) {
-            throw new Error(`Ошибка ${response.status}: ${response.statusText}`);
+        console.log('Статус ответа:', response.status);
+        
+        if (response.status === 200 || response.status === 204) {
+            console.log('Заметка удалена успешно');
+            return true;
         }
         
-        return true;
+        // Пробуем получить текст ошибки
+        const errorText = await response.text();
+        console.error('Ошибка удаления:', errorText);
+        
+        // Проверяем, может быть бэкенд ожидает другой формат
+        if (response.status === 404) {
+            throw new Error('Заметка не найдена');
+        } else if (response.status === 401) {
+            throw new Error('Ошибка авторизации');
+        } else {
+            throw new Error(`Ошибка сервера: ${response.status} - ${errorText}`);
+        }
+        
     } catch (error) {
         console.error('Ошибка при удалении:', error);
         throw error;
