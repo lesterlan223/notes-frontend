@@ -7,7 +7,8 @@ window.__notesAppLoaded = true;
 
 // ==================== КОНФИГУРАЦИЯ ====================
 const CONFIG = {
-    API_URL: 'https://notes-backend-production-1d9a.up.railway.app/api/notes'
+    API_URL: 'https://api.allorigins.win/raw?url=' + 
+             encodeURIComponent('https://notes-backend-production-1d9a.up.railway.app/api/notes')
 };
 
 console.log('Notes App Script Loaded! API:', CONFIG.API_URL);
