@@ -1,20 +1,16 @@
 // ========== ЗАЩИТА ОТ ДВОЙНОЙ ЗАГРУЗКИ ==========
 if (window.__notesAppLoaded) {
     console.warn('Notes app already loaded, skipping...');
-    throw new Error('Script loaded twice, stopping execution');
+    return;
 }
 window.__notesAppLoaded = true;
 
 // ==================== КОНФИГУРАЦИЯ ====================
-const API_CONFIG = {
-    BASE_URL: 'https://notes-backend-production-1d9a.up.railway.app/api',
-    ENDPOINTS: {
-        NOTES: '/notes',
-        IMPORTANT: '/notes/important'
-    }
+const CONFIG = {
+    API_URL: 'https://notes-backend-production-1d9a.up.railway.app/api/notes'
 };
 
-console.log('Notes App Script Loaded! API:', API_CONFIG.BASE_URL);
+console.log('Notes App Script Loaded! API:', CONFIG.API_URL);
 
 // ==================== DOM ЭЛЕМЕНТЫ ====================
 const elements = {
@@ -31,16 +27,14 @@ const elements = {
     closeModal: document.getElementById('closeModal'),
     noteModal: document.getElementById('noteModal'),
     newNoteBtn: document.getElementById('newNoteBtn'),
-    clearAllBtn: document.getElementById('clearAllBtn'),
-    filterBtns: document.querySelectorAll('.filter-btn'),
-    themeToggle: document.getElementById('themeToggle')
+    clearAllBtn: document.getElementById('clearAllBtn')
 };
 
 // Проверяем какие элементы найдены
 console.log('Найденные элементы:');
-Object.keys(elements).forEach(key => {
+for (const key in elements) {
     console.log(`  ${key}:`, elements[key] ? '✓' : '✗');
-});
+}
 
 // ==================== СОСТОЯНИЕ ====================
 let appState = {
@@ -54,122 +48,75 @@ let appState = {
 };
 
 // ==================== API ФУНКЦИИ ====================
-const api = {
-    getAllNotes: async () => {
-        try {
-            console.log('Загружаем заметки с:', `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NOTES}`);
-            const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NOTES}`, {
-                headers: {
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                }
-            });
-            
-            console.log('Статус ответа:', response.status);
-            
-            if (!response.ok) {
-                throw new Error(`Ошибка сервера: ${response.status} ${response.statusText}`);
-            }
-            
-            const data = await response.json();
-            console.log('Получены заметки:', data);
-            return Array.isArray(data) ? data : [];
-        } catch (error) {
-            console.error('Ошибка при загрузке заметок:', error);
-            showNotification('Ошибка загрузки заметок. Проверьте консоль.', 'error');
-            return [];
+async function fetchNotes() {
+    try {
+        console.log('Загружаем заметки...');
+        const response = await fetch(CONFIG.API_URL);
+        
+        if (!response.ok) {
+            throw new Error(`Ошибка ${response.status}: ${response.statusText}`);
         }
-    },
-
-    createNote: async (noteData) => {
-        try {
-            console.log('Создаем заметку:', noteData);
-            const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NOTES}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify(noteData)
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Ошибка сервера: ${response.status}`);
-            }
-            
-            const result = await response.json();
-            console.log('Заметка создана:', result);
-            return result;
-        } catch (error) {
-            console.error('Ошибка при создании заметки:', error);
-            throw error;
-        }
-    },
-
-    updateNote: async (id, noteData) => {
-        try {
-            const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NOTES}/${id}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify(noteData)
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Ошибка сервера: ${response.status}`);
-            }
-            
-            return await response.json();
-        } catch (error) {
-            console.error('Ошибка при обновлении заметки:', error);
-            throw error;
-        }
-    },
-
-    deleteNote: async (id) => {
-        try {
-            const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NOTES}/${id}`, {
-                method: 'DELETE',
-                headers: {
-                    'Accept': 'application/json'
-                }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Ошибка сервера: ${response.status}`);
-            }
-            
-            return await response.json();
-        } catch (error) {
-            console.error('Ошибка при удалении заметки:', error);
-            throw error;
-        }
-    },
-
-    toggleImportance: async (id, important) => {
-        try {
-            const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NOTES}/${id}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json'
-                },
-                body: JSON.stringify({ important })
-            });
-            
-            if (!response.ok) {
-                throw new Error(`Ошибка сервера: ${response.status}`);
-            }
-            
-            return await response.json();
-        } catch (error) {
-            console.error('Ошибка при изменении важности:', error);
-            throw error;
-        }
+        
+        const data = await response.json();
+        console.log('Получены заметки:', data.length || data);
+        return Array.isArray(data) ? data : [];
+    } catch (error) {
+        console.error('Ошибка при загрузке заметок:', error);
+        alert('❌ Ошибка загрузки заметок. Проверьте консоль.');
+        return [];
     }
-};
+}
+
+async function saveNoteToAPI(noteData) {
+    try {
+        const url = noteData.id 
+            ? `${CONFIG.API_URL}/${noteData.id}`
+            : CONFIG.API_URL;
+            
+        const method = noteData.id ? 'PUT' : 'POST';
+        
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                title: noteData.title,
+                content: noteData.content,
+                tags: noteData.tags || '',
+                important: noteData.important || false
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Ошибка ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        console.log('Заметка сохранена:', result);
+        return result;
+    } catch (error) {
+        console.error('Ошибка при сохранении:', error);
+        throw error;
+    }
+}
+
+async function deleteNoteFromAPI(id) {
+    try {
+        const response = await fetch(`${CONFIG.API_URL}/${id}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Ошибка ${response.status}: ${response.statusText}`);
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('Ошибка при удалении:', error);
+        throw error;
+    }
+}
 
 // ==================== ОТОБРАЖЕНИЕ ЗАМЕТОК ====================
 function renderNotes(notes) {
@@ -195,13 +142,14 @@ function renderNotes(notes) {
             <div class="note-header">
                 <h3>${escapeHtml(note.title || 'Без названия')}</h3>
                 <div class="note-actions">
-                    <button class="icon-btn edit-btn" title="Редактировать">
+                    <button class="btn-edit" title="Редактировать">
                         <i class="fas fa-edit"></i>
                     </button>
-                    <button class="icon-btn delete-btn" title="Удалить">
+                    <button class="btn-delete" title="Удалить">
                         <i class="fas fa-trash"></i>
                     </button>
-                    <button class="icon-btn important-toggle ${note.important ? 'active' : ''}" title="${note.important ? 'Снять важность' : 'Пометить важной'}">
+                    <button class="btn-important ${note.important ? 'active' : ''}" 
+                            title="${note.important ? 'Снять важность' : 'Пометить важной'}">
                         <i class="fas fa-star"></i>
                     </button>
                 </div>
@@ -217,13 +165,13 @@ function renderNotes(notes) {
                 </div>
             ` : ''}
             <div class="note-footer">
-                <small>ID: ${note.id} • Создано: ${formatDate(note.created_at)}</small>
+                <small>Создано: ${formatDate(note.created_at)}</small>
                 ${note.important ? '<span class="important-badge">★ Важная</span>' : ''}
             </div>
         </div>
     `).join('');
     
-    // Добавляем обработчики
+    // Добавляем обработчики событий
     addNoteEventListeners();
 }
 
@@ -241,9 +189,7 @@ function formatDate(dateString) {
         return date.toLocaleDateString('ru-RU', {
             day: '2-digit',
             month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
+            year: 'numeric'
         });
     } catch {
         return dateString;
@@ -252,15 +198,7 @@ function formatDate(dateString) {
 
 function showNotification(message, type = 'info') {
     console.log(`Уведомление [${type}]:`, message);
-    
-    // Простое уведомление через alert для начала
-    if (type === 'error') {
-        alert('❌ ' + message);
-    } else if (type === 'success') {
-        alert('✅ ' + message);
-    } else {
-        alert('ℹ️ ' + message);
-    }
+    alert(type === 'error' ? '❌ ' + message : '✅ ' + message);
 }
 
 // ==================== МОДАЛЬНОЕ ОКНО ====================
@@ -289,55 +227,48 @@ function openNewModal() {
     elements.noteModal.style.display = 'block';
 }
 
-function openEditModal(note) {
-    console.log('Редактируем заметку:', note.id);
-    
-    appState.isEditing = true;
-    appState.currentNoteId = note.id;
-    
-    if (elements.noteTitle) elements.noteTitle.value = note.title || '';
-    if (elements.noteContent) elements.noteContent.value = note.content || '';
-    if (elements.noteTags) elements.noteTags.value = note.tags || '';
-    if (elements.noteImportant) elements.noteImportant.checked = Boolean(note.important);
-    
-    const modalTitle = document.querySelector('#modalTitle');
-    if (modalTitle) modalTitle.textContent = 'Редактировать заметку';
-    
-    const saveBtn = elements.saveBtn;
-    if (saveBtn) saveBtn.textContent = 'Обновить заметку';
-    
-    elements.noteModal.style.display = 'block';
-}
-
 function closeModal() {
     if (elements.noteModal) {
         elements.noteModal.style.display = 'none';
     }
 }
 
-// ==================== ОБРАБОТЧИКИ СОБЫТИЙ ====================
+// ==================== ОБРАБОТЧИКИ СОБЫТИЙ ДЛЯ ЗАМЕТОК ====================
 function addNoteEventListeners() {
-    // Кнопки редактирования
-    document.querySelectorAll('.edit-btn').forEach(btn => {
+    // Редактирование
+    document.querySelectorAll('.btn-edit').forEach(btn => {
         btn.addEventListener('click', (e) => {
             const noteElement = e.target.closest('.note');
             const noteId = noteElement.dataset.id;
             const note = appState.filteredNotes.find(n => n.id == noteId);
+            
             if (note) {
-                openEditModal(note);
+                // Открываем форму для редактирования
+                appState.isEditing = true;
+                appState.currentNoteId = note.id;
+                
+                elements.noteTitle.value = note.title || '';
+                elements.noteContent.value = note.content || '';
+                elements.noteTags.value = note.tags || '';
+                elements.noteImportant.checked = Boolean(note.important);
+                
+                document.querySelector('#modalTitle').textContent = 'Редактировать заметку';
+                elements.saveBtn.textContent = 'Обновить заметку';
+                
+                elements.noteModal.style.display = 'block';
             }
         });
     });
     
-    // Кнопки удаления
-    document.querySelectorAll('.delete-btn').forEach(btn => {
+    // Удаление
+    document.querySelectorAll('.btn-delete').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const noteElement = e.target.closest('.note');
             const noteId = noteElement.dataset.id;
             
-            if (confirm('Вы уверены, что хотите удалить эту заметку?')) {
+            if (confirm('Удалить заметку?')) {
                 try {
-                    await api.deleteNote(noteId);
+                    await deleteNoteFromAPI(noteId);
                     showNotification('Заметка удалена', 'success');
                     await loadNotes();
                 } catch (error) {
@@ -347,8 +278,8 @@ function addNoteEventListeners() {
         });
     });
     
-    // Переключение важности
-    document.querySelectorAll('.important-toggle').forEach(btn => {
+    // Важность
+    document.querySelectorAll('.btn-important').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             const noteElement = e.target.closest('.note');
             const noteId = noteElement.dataset.id;
@@ -356,7 +287,16 @@ function addNoteEventListeners() {
             
             if (note) {
                 try {
-                    await api.toggleImportance(noteId, !note.important);
+                    const response = await fetch(`${CONFIG.API_URL}/${noteId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ important: !note.important })
+                    });
+                    
+                    if (!response.ok) throw new Error('Ошибка сервера');
+                    
                     showNotification(note.important ? 'Снята важность' : 'Отмечена как важная', 'success');
                     await loadNotes();
                 } catch (error) {
@@ -365,46 +305,6 @@ function addNoteEventListeners() {
             }
         });
     });
-}
-
-// ==================== ФИЛЬТРАЦИЯ И ПОИСК ====================
-function applyFiltersAndSort() {
-    console.log('Применяем фильтры и сортировку');
-    
-    let result = [...appState.notes];
-    
-    // Фильтр по важности
-    if (appState.filter === 'important') {
-        result = result.filter(note => note.important);
-    }
-    
-    // Поиск
-    if (appState.searchQuery) {
-        const query = appState.searchQuery.toLowerCase();
-        result = result.filter(note => {
-            return (
-                (note.title && note.title.toLowerCase().includes(query)) ||
-                (note.content && note.content.toLowerCase().includes(query)) ||
-                (note.tags && note.tags.toLowerCase().includes(query))
-            );
-        });
-    }
-    
-    // Сортировка
-    if (appState.sortBy === 'newest') {
-        result.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-    } else if (appState.sortBy === 'oldest') {
-        result.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
-    } else if (appState.sortBy === 'alpha-asc') {
-        result.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-    } else if (appState.sortBy === 'alpha-desc') {
-        result.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
-    } else if (appState.sortBy === 'important') {
-        result.sort((a, b) => (b.important || false) - (a.important || false));
-    }
-    
-    appState.filteredNotes = result;
-    renderNotes(result);
 }
 
 // ==================== СОХРАНЕНИЕ ЗАМЕТКИ ====================
@@ -423,6 +323,10 @@ async function saveNote() {
         important: elements.noteImportant ? elements.noteImportant.checked : false
     };
     
+    if (appState.isEditing && appState.currentNoteId) {
+        noteData.id = appState.currentNoteId;
+    }
+    
     console.log('Данные для сохранения:', noteData);
     
     if (!noteData.title || !noteData.content) {
@@ -431,13 +335,11 @@ async function saveNote() {
     }
     
     try {
-        if (appState.isEditing && appState.currentNoteId) {
-            await api.updateNote(appState.currentNoteId, noteData);
-            showNotification('Заметка обновлена успешно!', 'success');
-        } else {
-            await api.createNote(noteData);
-            showNotification('Заметка создана успешно!', 'success');
-        }
+        await saveNoteToAPI(noteData);
+        showNotification(
+            appState.isEditing ? 'Заметка обновлена!' : 'Заметка создана!', 
+            'success'
+        );
         
         closeModal();
         await loadNotes();
@@ -451,176 +353,137 @@ async function saveNote() {
 // ==================== ЗАГРУЗКА ЗАМЕТОК ====================
 async function loadNotes() {
     console.log('Загрузка заметок...');
-    try {
-        const notes = await api.getAllNotes();
-        appState.notes = notes;
-        console.log('Заметки загружены:', notes.length);
-        applyFiltersAndSort();
-    } catch (error) {
-        console.error('Ошибка при загрузке заметок:', error);
-    }
+    appState.notes = await fetchNotes();
+    appState.filteredNotes = [...appState.notes];
+    renderNotes(appState.filteredNotes);
 }
 
 // ==================== ИНИЦИАЛИЗАЦИЯ ====================
-function initEventListeners() {
-    console.log('Инициализация обработчиков событий...');
-    
-    // Кнопка новой заметки
-    if (elements.newNoteBtn) {
-        elements.newNoteBtn.addEventListener('click', openNewModal);
-        console.log('Кнопка новой заметки подключена');
-    }
-    
-    // Сохранение заметки
-    if (elements.saveBtn) {
-        elements.saveBtn.addEventListener('click', saveNote);
-        console.log('Кнопка сохранения подключена');
-    }
-    
-    // Закрытие модального окна
-    if (elements.cancelBtn) {
-        elements.cancelBtn.addEventListener('click', closeModal);
-    }
-    
-    if (elements.closeModal) {
-        elements.closeModal.addEventListener('click', closeModal);
-    }
-    
-    // Клик вне модального окна
-    window.addEventListener('click', (e) => {
-        if (e.target === elements.noteModal) {
-            closeModal();
-        }
-    });
-    
-    // Поиск
-    if (elements.searchInput) {
-        elements.searchInput.addEventListener('input', (e) => {
-            appState.searchQuery = e.target.value;
-            applyFiltersAndSort();
-        });
-    }
-    
-    // Сортировка
-    if (elements.sortSelect) {
-        elements.sortSelect.addEventListener('change', (e) => {
-            appState.sortBy = e.target.value;
-            applyFiltersAndSort();
-        });
-    }
-    
-    // Фильтры
-    if (elements.filterBtns) {
-        elements.filterBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                elements.filterBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                appState.filter = btn.dataset.filter;
-                applyFiltersAndSort();
-            });
-        });
-    }
-    
-    // Очистка всех заметок
-    if (elements.clearAllBtn) {
-        elements.clearAllBtn.addEventListener('click', async () => {
-            if (appState.notes.length === 0) {
-                showNotification('Нет заметок для удаления', 'info');
-                return;
-            }
-            
-            if (confirm(`Удалить ВСЕ заметки (${appState.notes.length} шт.)? Это действие нельзя отменить!`)) {
-                try {
-                    showNotification('Удаление всех заметок...', 'info');
-                    
-                    // Удаляем каждую заметку по отдельности
-                    for (const note of appState.notes) {
-                        await api.deleteNote(note.id);
-                        console.log('Удалена заметка:', note.id);
-                    }
-                    
-                    showNotification('Все заметки удалены', 'success');
-                    await loadNotes();
-                } catch (error) {
-                    console.error('Ошибка при удалении всех заметок:', error);
-                    showNotification('Ошибка при удалении заметок', 'error');
-                }
-            }
-        });
-    }
-    
-    // Тема
-    if (elements.themeToggle) {
-        elements.themeToggle.addEventListener('click', () => {
-            document.body.classList.toggle('dark-theme');
-            const icon = elements.themeToggle.querySelector('i');
-            if (icon) {
-                if (document.body.classList.contains('dark-theme')) {
-                    icon.className = 'fas fa-sun';
-                    elements.themeToggle.innerHTML = '<i class="fas fa-sun"></i> Светлая';
-                } else {
-                    icon.className = 'fas fa-moon';
-                    elements.themeToggle.innerHTML = '<i class="fas fa-moon"></i> Темная';
-                }
-            }
-        });
-    }
-    
-    // Горячие клавиши
-    document.addEventListener('keydown', (e) => {
-        // Ctrl+B - новая заметка
-        if (e.ctrlKey && e.key === 'b') {
-            e.preventDefault();
-            openNewModal();
-        }
-        // Esc - закрыть модалку
-        if (e.key === 'Escape' && elements.noteModal.style.display === 'block') {
-            closeModal();
-        }
-        // Ctrl+Q - сохранить (в модалке)
-        if (e.ctrlKey && e.key === 'q' && elements.noteModal.style.display === 'block') {
-            e.preventDefault();
-            saveNote();
-        }
-    });
-    
-    console.log('Обработчики событий инициализированы');
-}
-
-// ==================== ОСНОВНАЯ ИНИЦИАЛИЗАЦИЯ ====================
 async function initApp() {
     console.log('====== ИНИЦИАЛИЗАЦИЯ ПРИЛОЖЕНИЯ ======');
     
     try {
-        // Инициализируем обработчики
-        initEventListeners();
+        // Кнопка новой заметки
+        if (elements.newNoteBtn) {
+            elements.newNoteBtn.addEventListener('click', openNewModal);
+            console.log('Кнопка "Создать" подключена');
+        }
         
-        // Загружаем заметки
+        // Сохранение заметки
+        if (elements.saveBtn) {
+            elements.saveBtn.addEventListener('click', saveNote);
+            console.log('Кнопка "Сохранить" подключена');
+        }
+        
+        // Закрытие модального окна
+        if (elements.cancelBtn) {
+            elements.cancelBtn.addEventListener('click', closeModal);
+        }
+        
+        if (elements.closeModal) {
+            elements.closeModal.addEventListener('click', closeModal);
+        }
+        
+        // Клик вне модального окна
+        window.addEventListener('click', (e) => {
+            if (e.target === elements.noteModal) {
+                closeModal();
+            }
+        });
+        
+        // Поиск
+        if (elements.searchInput) {
+            elements.searchInput.addEventListener('input', (e) => {
+                const query = e.target.value.toLowerCase();
+                appState.filteredNotes = appState.notes.filter(note => 
+                    (note.title && note.title.toLowerCase().includes(query)) ||
+                    (note.content && note.content.toLowerCase().includes(query)) ||
+                    (note.tags && note.tags.toLowerCase().includes(query))
+                );
+                renderNotes(appState.filteredNotes);
+            });
+        }
+        
+        // Сортировка
+        if (elements.sortSelect) {
+            elements.sortSelect.addEventListener('change', (e) => {
+                const sortBy = e.target.value;
+                let sorted = [...appState.filteredNotes];
+                
+                if (sortBy === 'newest') {
+                    sorted.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+                } else if (sortBy === 'oldest') {
+                    sorted.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+                } else if (sortBy === 'alpha-asc') {
+                    sorted.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+                } else if (sortBy === 'alpha-desc') {
+                    sorted.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+                } else if (sortBy === 'important') {
+                    sorted.sort((a, b) => (b.important || false) - (a.important || false));
+                }
+                
+                renderNotes(sorted);
+            });
+        }
+        
+        // Фильтры
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                // Убрать активный класс у всех
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                // Добавить активный класс текущему
+                btn.classList.add('active');
+                
+                const filter = btn.dataset.filter;
+                
+                if (filter === 'all') {
+                    appState.filteredNotes = [...appState.notes];
+                } else if (filter === 'important') {
+                    appState.filteredNotes = appState.notes.filter(note => note.important);
+                } else if (filter === 'deleted') {
+                    // Для корзины - если у вас есть поле deleted
+                    appState.filteredNotes = appState.notes.filter(note => note.deleted);
+                }
+                
+                renderNotes(appState.filteredNotes);
+            });
+        });
+        
+        // Очистка всех заметок
+        if (elements.clearAllBtn) {
+            elements.clearAllBtn.addEventListener('click', async () => {
+                if (appState.notes.length === 0) {
+                    showNotification('Нет заметок для удаления', 'info');
+                    return;
+                }
+                
+                if (confirm(`Удалить ВСЕ заметки (${appState.notes.length} шт.)? Это действие нельзя отменить!`)) {
+                    try {
+                        // Удаляем каждую заметку по отдельности
+                        for (const note of appState.notes) {
+                            await deleteNoteFromAPI(note.id);
+                        }
+                        
+                        showNotification('Все заметки удалены', 'success');
+                        await loadNotes();
+                    } catch (error) {
+                        console.error('Ошибка при удалении всех заметок:', error);
+                        showNotification('Ошибка при удалении заметок', 'error');
+                    }
+                }
+            });
+        }
+        
+        // Загрузка заметок при старте
         await loadNotes();
         
         console.log('Приложение успешно инициализировано!');
-        console.log('Используйте в консоли:');
-        console.log('  - app.loadNotes() - перезагрузить заметки');
-        console.log('  - app.api - методы API');
-        console.log('  - app.appState - состояние приложения');
-        
-        showNotification('Приложение загружено!', 'success');
         
     } catch (error) {
         console.error('Критическая ошибка при инициализации:', error);
-        showNotification('Ошибка инициализации приложения', 'error');
+        alert('❌ Ошибка инициализации приложения');
     }
 }
-
-// ==================== ЭКСПОРТ ДЛЯ ОТЛАДКИ ====================
-window.app = {
-    loadNotes,
-    api,
-    appState,
-    openNewModal,
-    saveNote,
-    closeModal
-};
 
 // ==================== ЗАПУСК ПРИЛОЖЕНИЯ ====================
 // Ждем полной загрузки DOM
