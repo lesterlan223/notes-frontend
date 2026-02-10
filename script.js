@@ -1,764 +1,488 @@
-// Конфигурация API
+// ==================== КОНФИГУРАЦИЯ ====================
 const API_CONFIG = {
-    BASE_URL: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? 'http://localhost:5000/api'
-        : 'https://your-railway-app.railway.app/api',
-    ENDPOINTS: {
-        NOTES: '/notes',
-        EXPORT: '/notes/export/all',
-        IMPORT: '/notes/import',
-        CLEAR_TRASH: '/notes/trash/clear'
-    }
+  BASE_URL: 'https://notes-backend-production-1d9a.up.railway.app/api',
+  ENDPOINTS: {
+    NOTES: '/notes',
+    IMPORTANT: '/notes/important'
+  }
 };
 
-class NotesAPI {
-    constructor() {
-        this.baseUrl = API_CONFIG.BASE_URL;
+// ==================== DOM ЭЛЕМЕНТЫ ====================
+const elements = {
+  notesList: document.getElementById('notesList'),
+  noteForm: document.getElementById('noteForm'),
+  noteTitle: document.getElementById('noteTitle'),
+  noteContent: document.getElementById('noteContent'),
+  noteTags: document.getElementById('noteTags'),
+  importantCheckbox: document.getElementById('importantCheckbox'),
+  filterImportant: document.getElementById('filterImportant'),
+  searchInput: document.getElementById('searchInput'),
+  loadingIndicator: document.getElementById('loadingIndicator'),
+  errorAlert: document.getElementById('errorAlert'),
+  emptyState: document.getElementById('emptyState')
+};
+
+// ==================== СОСТОЯНИЕ ПРИЛОЖЕНИЯ ====================
+let appState = {
+  notes: [],
+  filteredNotes: [],
+  isEditing: false,
+  currentNoteId: null,
+  showImportantOnly: false,
+  searchQuery: ''
+};
+
+// ==================== УТИЛИТЫ ====================
+const utils = {
+  // Показать/скрыть элементы
+  showElement: (element) => element && (element.style.display = 'block'),
+  hideElement: (element) => element && (element.style.display = 'none'),
+  
+  // Форматирование даты
+  formatDate: (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  },
+  
+  // Создание DOM элемента
+  createElement: (tag, className, text = '', attributes = {}) => {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    if (text) element.textContent = text;
+    Object.entries(attributes).forEach(([key, value]) => {
+      element.setAttribute(key, value);
+    });
+    return element;
+  }
+};
+
+// ==================== API ФУНКЦИИ ====================
+const api = {
+  // Получить все заметки
+  getAllNotes: async () => {
+    try {
+      utils.showElement(elements.loadingIndicator);
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NOTES}`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Ошибка при загрузке заметок:', error);
+      utils.showElement(elements.errorAlert);
+      return [];
+    } finally {
+      utils.hideElement(elements.loadingIndicator);
     }
+  },
 
-    async request(endpoint, options = {}) {
-        const url = `${this.baseUrl}${endpoint}`;
-        
-        const defaultOptions = {
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            ...options
-        };
-
-        try {
-            const response = await fetch(url, defaultOptions);
-            
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || 'Ошибка сервера');
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('API Error:', error);
-            throw error;
-        }
+  // Создать заметку
+  createNote: async (noteData) => {
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NOTES}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(noteData)
+      });
+      
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      console.error('Ошибка при создании заметки:', error);
+      throw error;
     }
+  },
 
-    async getNotes(filter = 'all', search = '', sort = 'newest') {
-        const params = new URLSearchParams();
-        if (filter) params.append('filter', filter);
-        if (search) params.append('search', search);
-        if (sort) params.append('sort', sort);
-
-        const endpoint = `${API_CONFIG.ENDPOINTS.NOTES}?${params.toString()}`;
-        return this.request(endpoint);
+  // Обновить заметку
+  updateNote: async (id, noteData) => {
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NOTES}/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(noteData)
+      });
+      
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      console.error('Ошибка при обновлении заметки:', error);
+      throw error;
     }
+  },
 
-    async getNote(id) {
-        return this.request(`${API_CONFIG.ENDPOINTS.NOTES}/${id}`);
+  // Удалить заметку
+  deleteNote: async (id) => {
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NOTES}/${id}`, {
+        method: 'DELETE'
+      });
+      
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      console.error('Ошибка при удалении заметки:', error);
+      throw error;
     }
+  },
 
-    async createNote(noteData) {
-        return this.request(API_CONFIG.ENDPOINTS.NOTES, {
-            method: 'POST',
-            body: JSON.stringify(noteData)
-        });
+  // Переключить важность заметки
+  toggleImportance: async (id, important) => {
+    try {
+      const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.NOTES}/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ important })
+      });
+      
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      console.error('Ошибка при обновлении важности:', error);
+      throw error;
     }
+  }
+};
 
-    async updateNote(id, noteData) {
-        return this.request(`${API_CONFIG.ENDPOINTS.NOTES}/${id}`, {
-            method: 'PUT',
-            body: JSON.stringify(noteData)
-        });
-    }
+// ==================== ОБРАБОТКА ФОРМЫ ====================
+const formHandler = {
+  // Сброс формы
+  resetForm: () => {
+    elements.noteTitle.value = '';
+    elements.noteContent.value = '';
+    elements.noteTags.value = '';
+    elements.importantCheckbox.checked = false;
+    appState.isEditing = false;
+    appState.currentNoteId = null;
+    
+    // Изменить текст кнопки
+    const submitBtn = elements.noteForm.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Создать заметку';
+  },
 
-    async deleteNote(id) {
-        return this.request(`${API_CONFIG.ENDPOINTS.NOTES}/${id}/trash`, {
-            method: 'DELETE'
-        });
-    }
+  // Заполнить форму для редактирования
+  fillFormForEdit: (note) => {
+    elements.noteTitle.value = note.title || '';
+    elements.noteContent.value = note.content || '';
+    elements.noteTags.value = note.tags ? note.tags.join(', ') : '';
+    elements.importantCheckbox.checked = Boolean(note.important);
+    appState.isEditing = true;
+    appState.currentNoteId = note.id;
+    
+    // Изменить текст кнопки
+    const submitBtn = elements.noteForm.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Обновить заметку';
+  },
 
-    async deleteNotePermanently(id) {
-        return this.request(`${API_CONFIG.ENDPOINTS.NOTES}/${id}`, {
-            method: 'DELETE'
-        });
-    }
-
-    async restoreNote(id) {
-        return this.request(`${API_CONFIG.ENDPOINTS.NOTES}/${id}/restore`, {
-            method: 'PATCH'
-        });
-    }
-
-    async toggleImportant(id) {
-        return this.request(`${API_CONFIG.ENDPOINTS.NOTES}/${id}/toggle-important`, {
-            method: 'PATCH'
-        });
-    }
-
-    async exportNotes() {
-        return this.request(API_CONFIG.ENDPOINTS.EXPORT);
-    }
-
-    async importNotes(notes) {
-        return this.request(API_CONFIG.ENDPOINTS.IMPORT, {
-            method: 'POST',
-            body: JSON.stringify({ notes })
-        });
-    }
-
-    async clearDeletedNotes() {
-        return this.request(API_CONFIG.ENDPOINTS.CLEAR_TRASH, {
-            method: 'DELETE'
-        });
-    }
-}
-
-// Создаем экземпляр API
-const api = new NotesAPI();
-
-
-document.addEventListener('DOMContentLoaded', () => {
-    const saveBtn = document.getElementById('saveBtn');
-    const notesContainer = document.getElementById('notesContainer');
-    const newNoteBtn = document.getElementById('newNoteBtn');
-    const noteModal = document.getElementById('noteModal');
-    const closeModal = document.getElementById('closeModal');
-    const cancelBtn = document.getElementById('cancelBtn');
-    const noteForm = document.getElementById('noteForm');
-    const noteTitle = document.getElementById('noteTitle');
-    const noteText = document.getElementById('noteText');
-    const noteTags = document.getElementById('noteTags');
-    const noteImportant = document.getElementById('noteImportant');
-    const searchInput = document.getElementById('searchInput');
-    const sortSelect = document.getElementById('sortSelect');
-    const filterBtns = document.querySelectorAll('.filter-btn');
-    const confirmModal = document.getElementById('confirmModal');
-    const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
-    const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
-    const exportBtn = document.getElementById('exportBtn');
-    const importBtn = document.getElementById('importBtn');
-    const clearAllBtn = document.getElementById('clearAllBtn');
-    const clearAllModal = document.getElementById('clearAllModal');
-    const confirmClearAllBtn = document.getElementById('confirmClearAllBtn');
-    const cancelClearAllBtn = document.getElementById('cancelClearAllBtn');
-    const themeToggle = document.getElementById('themeToggle');
-
-    let notes = [];
-    let currentNoteId = null;
-    let currentFilter = 'all';
-    let currentSort = '';
-    let currentSearch = '';
-    let selectedNoteId = null;
-
-    loadNotes();
-    renderNotes();
-    setupEventListeners();
-
-    async function loadNotes() {
-        try {
-            showNotification('Загрузка заметок...', 'info');
-            const response = await api.getNotes(currentFilter, currentSearch, currentSort);
-            notes = response.data || [];
-            renderNotes();
-        } catch (error) {
-            showNotification('Ошибка при загрузке заметок', 'error');
-            console.error('Load notes error:', error);
-            // Fallback to localStorage if API fails
-            const savedNotes = localStorage.getItem('notes');
-            if (savedNotes) {
-                notes = JSON.parse(savedNotes);
-                renderNotes();
-                showNotification('Используется локальное хранилище', 'warning');
-            }
-        }
-    }
-
-    async function saveNote(e) {
-        e.preventDefault();
-        
-        const title = noteTitle.value.trim();
-        const content = noteText.value.trim();
-        const tags = noteTags.value.split(',').map(tag => tag.trim()).filter(tag => tag);
-        
-        if (!title || !content) {
-            showNotification('Заголовок и текст заметки обязательны', 'error');
-            return;
-        }
-        
-        try {
-            if (currentNoteId) {
-                // Обновляем существующую заметку
-                const response = await api.updateNote(currentNoteId, {
-                    title,
-                    content,
-                    tags,
-                    important: noteImportant.checked
-                });
-                showNotification('Заметка обновлена', 'success');
-            } else {
-                // Создаем новую заметку
-                const response = await api.createNote({
-                    title,
-                    content,
-                    tags,
-                    important: noteImportant.checked
-                });
-                showNotification('Заметка создана', 'success');
-            }
-            
-            await loadNotes(); // Перезагружаем список
-            noteModal.classList.remove('active');
-        } catch (error) {
-            showNotification('Ошибка при сохранении заметки', 'error');
-            console.error('Save note error:', error);
-        }
-    }
-
-    function renderNotes() {
-        notesContainer.innerHTML = '';
-        
-        let filteredNotes = filterNotes(notes);
-        filteredNotes = sortNotes(filteredNotes);
-        
-        if (filteredNotes.length === 0) {
-            const emptyMessage = currentFilter === 'deleted' 
-                ? 'Корзина пуста'
-                : currentSearch 
-                ? 'По вашему запросу ничего не найдено'
-                : 'Нет заметок';
-            
-            notesContainer.innerHTML = `
-                <div class="empty">
-                    <i class="fas fa-${currentFilter === 'deleted' ? 'trash' : 'sticky-note'}"></i>
-                    <h3>${emptyMessage}</h3>
-                    <p>${currentFilter === 'deleted' ? 'Удаленные заметки появятся здесь' : 'Создайте первую заметку!'}</p>
-                </div>
-            `;
-            return;
-        }
-        
-        filteredNotes.forEach(note => {
-            const noteElement = createNoteElement(note);
-            notesContainer.appendChild(noteElement);
-        });
-    }
-
-    function filterNotes(notesList) {
-        if (currentFilter === 'deleted') {
-            return notesList.filter(note => note.deleted);
-        }
-        
-        let filtered = notesList.filter(note => !note.deleted);
-        
-        if (currentFilter === 'important') {
-            filtered = filtered.filter(note => note.important);
-        }
-        
-        if (currentSearch) {
-            const searchLower = currentSearch.toLowerCase();
-            filtered = filtered.filter(note => 
-                note.title.toLowerCase().includes(searchLower) || 
-                note.content.toLowerCase().includes(searchLower) ||
-                (note.tags && note.tags.some(tag => tag.toLowerCase().includes(searchLower)))
-            );
-        }
-        
-        return filtered;
-    }
-
-    function sortNotes(notesList) {
-        if (!currentSort) return notesList;
-        
-        return [...notesList].sort((a, b) => {
-            switch(currentSort) {
-                case 'newest':
-                    return new Date(b.updatedAt) - new Date(a.updatedAt);
-                case 'oldest':
-                    return new Date(a.updatedAt) - new Date(b.updatedAt);
-                case 'alpha-asc':
-                    return a.title.localeCompare(b.title);
-                case 'alpha-desc':
-                    return b.title.localeCompare(a.title);
-                case 'important':
-                    return (b.important === a.important) ? 0 : b.important ? 1 : -1;
-                default:
-                    return 0;
-            }
-        });
-    }
-
-    function createNoteElement(note) {
-        const noteDiv = document.createElement('div');
-        noteDiv.className = `note ${note.important ? 'important' : ''} ${note.deleted ? 'deleted' : ''} ${selectedNoteId === note.id ? 'active' : ''}`;
-        noteDiv.dataset.id = note.id;
-        
-        const date = new Date(note.updatedAt);
-        const formattedDate = date.toLocaleDateString('ru-RU', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-        
-        noteDiv.innerHTML = `
-            <div class="note-header">
-                <div class="note-title">
-                    ${note.important ? '<i class="fas fa-star note-important"></i>' : ''}
-                    ${escapeHtml(note.title)}
-                </div>
-            </div>
-            <div class="note-content">${escapeHtml(note.content).replace(/\n/g, '<br>')}</div>
-            ${note.tags && note.tags.length > 0 ? `
-                <div class="note-tags">
-                    ${note.tags.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')}
-                </div>
-            ` : ''}
-            <div class="note-date">
-                <i class="far fa-clock"></i> ${formattedDate}
-            </div>
-            <div class="note-actions">
-                ${!note.deleted ? `
-                    <button class="note-btn edit" title="Редактировать">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="note-btn important-btn" title="${note.important ? 'Снять важность' : 'Пометить важной'}">
-                        <i class="${note.important ? 'fas fa-star' : 'far fa-star'}"></i>
-                    </button>
-                    <button class="note-btn delete" title="Удалить">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                ` : `
-                    <button class="note-btn restore" title="Восстановить">
-                        <i class="fas fa-undo"></i>
-                    </button>
-                    <button class="note-btn delete" title="Удалить навсегда">
-                        <i class="fas fa-trash"></i>
-                    </button>
-                `}
-            </div>
-        `;
-        
-        noteDiv.addEventListener('click', (e) => {
-            if (!e.target.closest('.note-actions')) {
-                if (selectedNoteId === note.id) {
-                    selectedNoteId = null;
-                    noteDiv.classList.remove('active');
-                } else {
-                    selectedNoteId = note.id;
-                    document.querySelectorAll('.note').forEach(n => n.classList.remove('active'));
-                    noteDiv.classList.add('active');
-                }
-            }
-        });
-        
-        const editBtn = noteDiv.querySelector('.edit');
-        const importantBtn = noteDiv.querySelector('.important-btn');
-        const deleteBtn = noteDiv.querySelector('.delete');
-        const restoreBtn = noteDiv.querySelector('.restore');
-        
-        if (editBtn) editBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            editNote(note.id);
-        });
-        if (importantBtn) importantBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            toggleImportant(note.id, importantBtn);
-        });
-        if (deleteBtn) deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (note.deleted) {
-                showConfirmModal('Вы уверены, что хотите удалить эту заметку навсегда?', () => {
-                    deleteNotePermanently(note.id);
-                });
-            } else {
-                showConfirmModal('Вы уверены, что хотите удалить эту заметку?', () => {
-                    deleteNote(note.id);
-                });
-            }
-        });
-        if (restoreBtn) restoreBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            restoreNote(note.id);
-        });
-        
-        return noteDiv;
-    }
-
-    function openNewNoteModal() {
-        currentNoteId = null;
-        document.getElementById('modalTitle').textContent = 'Новая заметка';
-        noteForm.reset();
-        noteModal.classList.add('active');
-        noteTitle.focus();
-    }
-
-    function editNote(id) {
-        const note = notes.find(n => n.id === id);
-        if (!note) return;
-        
-        currentNoteId = id;
-        document.getElementById('modalTitle').textContent = 'Редактировать заметку';
-        noteTitle.value = note.title;
-        noteText.value = note.content;
-        noteTags.value = note.tags ? note.tags.join(', ') : '';
-        noteImportant.checked = note.important;
-        noteModal.classList.add('active');
-        noteTitle.focus();
-    }
-
-    function saveNote(e) {
-        e.preventDefault();
-        
-        const title = noteTitle.value.trim();
-        const content = noteText.value.trim();
-        const tags = noteTags.value.split(',').map(tag => tag.trim()).filter(tag => tag);
-        
-        if (!title || !content) {
-            showNotification('Заголовок и текст заметки обязательны', 'error');
-            return;
-        }
-        
-        const now = new Date().toISOString();
-        
-        if (currentNoteId) {
-            const noteIndex = notes.findIndex(n => n.id === currentNoteId);
-            if (noteIndex !== -1) {
-                notes[noteIndex] = {
-                    ...notes[noteIndex],
-                    title,
-                    content,
-                    tags,
-                    important: noteImportant.checked,
-                    updatedAt: now
-                };
-                showNotification('Заметка обновлена', 'success');
-            }
-        } else {
-            const newId = notes.length > 0 ? Math.max(...notes.map(n => n.id)) + 1 : 1;
-            notes.push({
-                id: newId,
-                title,
-                content,
-                tags,
-                important: noteImportant.checked,
-                deleted: false,
-                createdAt: now,
-                updatedAt: now
-            });
-            showNotification('Заметка создана', 'success');
-        }
-        
-        saveNotes();
-        renderNotes();
-        noteModal.classList.remove('active');
-    }
-
-    function deleteNote(id) {
-        const noteIndex = notes.findIndex(n => n.id === id);
-        if (noteIndex !== -1) {
-            notes[noteIndex].deleted = true;
-            notes[noteIndex].updatedAt = new Date().toISOString();
-            saveNotes();
-            renderNotes();
-            showNotification('Заметка перемещена в корзину', 'info');
-        }
-    }
-
-    function deleteNotePermanently(id) {
-        notes = notes.filter(n => n.id !== id);
-        saveNotes();
-        renderNotes();
-        showNotification('Заметка удалена навсегда', 'success');
-    }
-
-    function restoreNote(id) {
-        const noteIndex = notes.findIndex(n => n.id === id);
-        if (noteIndex !== -1) {
-            notes[noteIndex].deleted = false;
-            notes[noteIndex].updatedAt = new Date().toISOString();
-            saveNotes();
-            renderNotes();
-            showNotification('Заметка восстановлена', 'success');
-        }
-    }
-
-    function toggleImportant(id, buttonElement = null) {
-        const noteIndex = notes.findIndex(n => n.id === id);
-        if (noteIndex !== -1) {
-            notes[noteIndex].important = !notes[noteIndex].important;
-            notes[noteIndex].updatedAt = new Date().toISOString();
-            saveNotes();
-            
-            if (buttonElement) {
-                const icon = buttonElement.querySelector('i');
-                const title = buttonElement.getAttribute('title');
-                
-                if (notes[noteIndex].important) {
-                    icon.className = 'fas fa-star';
-                    buttonElement.setAttribute('title', 'Снять важность');
-                    
-                    const noteElement = document.querySelector(`.note[data-id="${id}"]`);
-                    if (noteElement) {
-                        const titleElement = noteElement.querySelector('.note-title');
-                        if (!titleElement.querySelector('.note-important')) {
-                            const starIcon = document.createElement('i');
-                            starIcon.className = 'fas fa-star note-important';
-                            titleElement.insertBefore(starIcon, titleElement.firstChild);
-                        }
-                        noteElement.classList.add('important');
-                    }
-                } else {
-                    icon.className = 'far fa-star';
-                    buttonElement.setAttribute('title', 'Пометить важной');
-                    
-                    const noteElement = document.querySelector(`.note[data-id="${id}"]`);
-                    if (noteElement) {
-                        const starIcon = noteElement.querySelector('.note-title .note-important');
-                        if (starIcon) {
-                            starIcon.remove();
-                        }
-                        noteElement.classList.remove('important');
-                    }
-                }
-            } else {
-                renderNotes();
-            }
-            
-            showNotification(
-                notes[noteIndex].important 
-                    ? 'Заметка помечена как важная' 
-                    : 'Снята отметка важности', 
-                'info'
-            );
-        }
-    }
-
-    function clearAllNotes() {
-        notes = [];
-        saveNotes();
-        renderNotes();
-        showNotification('Все заметки удалены', 'success');
-    }
-
-    async function exportNotes() {
-        try {
-            const response = await api.exportNotes();
-            const dataStr = JSON.stringify(response.data, null, 2);
-            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-            
-            const exportFileDefaultName = `notes_${new Date().toISOString().split('T')[0]}.json`;
-            
-            const linkElement = document.createElement('a');
-            linkElement.setAttribute('href', dataUri);
-            linkElement.setAttribute('download', exportFileDefaultName);
-            linkElement.click();
-            
-            showNotification('Заметки экспортированы', 'success');
-        } catch (error) {
-            showNotification('Ошибка при экспорте заметок', 'error');
-            console.error('Export error:', error);
-        }
-    }
-
-        async function importNotes() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        
-        input.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                try {
-                    const importedNotes = JSON.parse(event.target.result);
-                    if (!Array.isArray(importedNotes)) {
-                        throw new Error('Неверный формат файла');
-                    }
-                    
-                    await api.importNotes(importedNotes);
-                    showNotification('Заметки успешно импортированы', 'success');
-                    await loadNotes();
-                    
-                } catch (error) {
-                    showNotification('Ошибка при импорте файла', 'error');
-                    console.error('Import error:', error);
-                }
-            };
-            reader.readAsText(file);
-        };
-        
-        input.click();
+  // Обработчик отправки формы
+  handleSubmit: async (event) => {
+    event.preventDefault();
+    
+    const noteData = {
+      title: elements.noteTitle.value.trim(),
+      content: elements.noteContent.value.trim(),
+      tags: elements.noteTags.value.split(',').map(tag => tag.trim()).filter(tag => tag),
+      important: elements.importantCheckbox.checked
+    };
+    
+    // Валидация
+    if (!noteData.title || !noteData.content) {
+      alert('Пожалуйста, заполните заголовок и содержание заметки');
+      return;
     }
     
-    function showConfirmModal(message, confirmCallback) {
-        document.getElementById('confirmMessage').textContent = message;
-        confirmModal.classList.add('active');
-        
-        const handleConfirm = () => {
-            confirmCallback();
-            confirmModal.classList.remove('active');
-            cleanupListeners();
-        };
-        
-        const handleCancel = () => {
-            confirmModal.classList.remove('active');
-            cleanupListeners();
-        };
-        
-        function cleanupListeners() {
-            confirmDeleteBtn.removeEventListener('click', handleConfirm);
-            cancelDeleteBtn.removeEventListener('click', handleCancel);
-        }
-        
-        confirmDeleteBtn.addEventListener('click', handleConfirm);
-        cancelDeleteBtn.addEventListener('click', handleCancel);
+    try {
+      if (appState.isEditing && appState.currentNoteId) {
+        // Режим редактирования
+        await api.updateNote(appState.currentNoteId, noteData);
+        showNotification('Заметка обновлена успешно!', 'success');
+      } else {
+        // Режим создания
+        await api.createNote(noteData);
+        showNotification('Заметка создана успешно!', 'success');
+      }
+      
+      // Обновить список и сбросить форму
+      await loadNotes();
+      formHandler.resetForm();
+    } catch (error) {
+      console.error('Ошибка при сохранении заметки:', error);
+      showNotification('Ошибка при сохранении заметки', 'error');
     }
+  }
+};
 
-    function showNotification(message, type = 'info') {
-        const notificationArea = document.getElementById('notificationArea');
-        const notificationId = 'notification-' + Date.now();
-        
-        const notification = document.createElement('div');
-        notification.id = notificationId;
-        notification.className = `notification ${type}`;
-        notification.innerHTML = `
-            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
-            <span>${message}</span>
-            <button class="close-notification">&times;</button>
-        `;
-        
-        notificationArea.appendChild(notification);
-        
-        setTimeout(() => {
-            const notif = document.getElementById(notificationId);
-            if (notif) {
-                notif.style.opacity = '0';
-                notif.style.transform = 'translateX(100%)';
-                setTimeout(() => notif.remove(), 300);
-            }
-        }, 5000);
-        
-        notification.querySelector('.close-notification').addEventListener('click', () => {
-            notification.style.opacity = '0';
-            notification.style.transform = 'translateX(100%)';
-            setTimeout(() => notification.remove(), 300);
-        });
+// ==================== ОТОБРАЖЕНИЕ ЗАМЕТОК ====================
+const renderer = {
+  // Отобразить список заметок
+  renderNotesList: (notes) => {
+    if (!elements.notesList) return;
+    
+    // Очистить список
+    elements.notesList.innerHTML = '';
+    
+    // Показать/скрыть состояние "пусто"
+    if (notes.length === 0) {
+      utils.showElement(elements.emptyState);
+      return;
     }
+    utils.hideElement(elements.emptyState);
+    
+    // Создать элементы заметок
+    notes.forEach(note => {
+      const noteElement = renderer.createNoteElement(note);
+      elements.notesList.appendChild(noteElement);
+    });
+  },
 
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
+  // Создать элемент заметки
+  createNoteElement: (note) => {
+    const noteCard = utils.createElement('div', 'note-card');
+    if (note.important) noteCard.classList.add('important');
+    
+    // Заголовок
+    const title = utils.createElement('h3', 'note-title', note.title);
+    
+    // Содержание
+    const content = utils.createElement('p', 'note-content', note.content);
+    
+    // Теги
+    let tagsElement = null;
+    if (note.tags && note.tags.length > 0) {
+      const tagsText = note.tags.map(tag => `#${tag}`).join(' ');
+      tagsElement = utils.createElement('div', 'note-tags', tagsText);
     }
-
-    function setupEventListeners() {
-        newNoteBtn.addEventListener('click', openNewNoteModal);
-        
-        closeModal.addEventListener('click', () => noteModal.classList.remove('active'));
-        cancelBtn.addEventListener('click', () => noteModal.classList.remove('active'));
-        
-        noteForm.addEventListener('submit', saveNote);
-        
-        searchInput.addEventListener('input', (e) => {
-            currentSearch = e.target.value;
-            renderNotes();
-        });
-
-        noteForm.addEventListener('submit', (e) => {
-            e.preventDefault();
-            saveNote(e);
-        });
-
-        saveBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            saveNote(e);
-        });
-        
-        sortSelect.addEventListener('change', (e) => {
-            currentSort = e.target.value;
-            renderNotes();
-        });
-        
-        filterBtns.forEach(btn => {
-            btn.addEventListener('click', () => {
-                filterBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                currentFilter = btn.dataset.filter;
-                renderNotes();
-            });
-        });
-        
-        exportBtn.addEventListener('click', exportNotes);
-        
-        importBtn.addEventListener('click', importNotes);
-        
-        clearAllBtn.addEventListener('click', () => {
-            clearAllModal.classList.add('active');
-        });
-        
-        confirmClearAllBtn.addEventListener('click', () => {
-            clearAllNotes();
-            clearAllModal.classList.remove('active');
-        });
-        
-        cancelClearAllBtn.addEventListener('click', () => {
-            clearAllModal.classList.remove('active');
-        });
-        
-        document.addEventListener('keydown', (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-                e.preventDefault();
-                openNewNoteModal(); 
-            }
-            
-            if ((e.ctrlKey || e.metaKey) && e.key === 'q') {
-                if (noteModal.classList.contains('active')) {
-                    e.preventDefault();
-                    saveBtn.click();
-                }
-            }
-            
-            if (e.key === 'Escape') {
-                if (noteModal.classList.contains('active')) {
-                    noteModal.classList.remove('active');
-                }
-                if (confirmModal.classList.contains('active')) {
-                    confirmModal.classList.remove('active');
-                }
-                if (clearAllModal.classList.contains('active')) {
-                    clearAllModal.classList.remove('active');
-                }
-            }
-        });
-        
-        window.addEventListener('click', (e) => {
-            if (e.target === noteModal) {
-                noteModal.classList.remove('active');
-            }
-            if (e.target === confirmModal) {
-                confirmModal.classList.remove('active');
-            }
-            if (e.target === clearAllModal) {
-                clearAllModal.classList.remove('active');
-            }
-        });
-        
-        themeToggle.addEventListener('click', () => {
-            const currentTheme = document.documentElement.getAttribute('data-theme');
-            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-            document.documentElement.setAttribute('data-theme', newTheme);
-            localStorage.setItem('theme', newTheme);
-            
-            themeToggle.innerHTML = newTheme === 'dark' 
-                ? '<i class="fas fa-sun"></i> Тема' 
-                : '<i class="fas fa-moon"></i> Тема';
-        });
-        
-        const savedTheme = localStorage.getItem('theme') || 'light';
-        document.documentElement.setAttribute('data-theme', savedTheme);
-        themeToggle.innerHTML = savedTheme === 'dark' 
-            ? '<i class="fas fa-sun"></i> Тема' 
-            : '<i class="fas fa-moon"></i> Тема';
+    
+    // Даты
+    const dateInfo = utils.createElement('div', 'note-date');
+    if (note.created_at) {
+      dateInfo.textContent = `Создано: ${utils.formatDate(note.created_at)}`;
     }
-});
+    
+    // Кнопки действий
+    const actions = utils.createElement('div', 'note-actions');
+    
+    // Кнопка редактирования
+    const editBtn = utils.createElement('button', 'btn btn-edit', '✏️ Редактировать');
+    editBtn.addEventListener('click', () => formHandler.fillFormForEdit(note));
+    
+    // Кнопка удаления
+    const deleteBtn = utils.createElement('button', 'btn btn-delete', '🗑️ Удалить');
+    deleteBtn.addEventListener('click', () => renderer.handleDeleteNote(note.id));
+    
+    // Кнопка важности
+    const importanceText = note.important ? '★ Сделать обычной' : '☆ Отметить важной';
+    const importanceBtn = utils.createElement('button', 'btn btn-importance', importanceText);
+    importanceBtn.addEventListener('click', () => renderer.handleToggleImportance(note.id, !note.important));
+    
+    actions.appendChild(editBtn);
+    actions.appendChild(importanceBtn);
+    actions.appendChild(deleteBtn);
+    
+    // Собрать карточку
+    noteCard.appendChild(title);
+    noteCard.appendChild(content);
+    if (tagsElement) noteCard.appendChild(tagsElement);
+    noteCard.appendChild(dateInfo);
+    noteCard.appendChild(actions);
+    
+    return noteCard;
+  },
+
+  // Обработчик удаления заметки
+  handleDeleteNote: async (id) => {
+    if (!confirm('Вы уверены, что хотите удалить эту заметку?')) return;
+    
+    try {
+      await api.deleteNote(id);
+      showNotification('Заметка удалена успешно!', 'success');
+      await loadNotes();
+    } catch (error) {
+      console.error('Ошибка при удалении заметки:', error);
+      showNotification('Ошибка при удалении заметки', 'error');
+    }
+  },
+
+  // Обработчик переключения важности
+  handleToggleImportance: async (id, important) => {
+    try {
+      await api.toggleImportance(id, important);
+      const message = important ? 'Заметка отмечена как важная' : 'Заметка стала обычной';
+      showNotification(message, 'success');
+      await loadNotes();
+    } catch (error) {
+      console.error('Ошибка при изменении важности:', error);
+      showNotification('Ошибка при изменении важности', 'error');
+    }
+  }
+};
+
+// ==================== ФИЛЬТРАЦИЯ И ПОИСК ====================
+const filterHandler = {
+  // Применить фильтры
+  applyFilters: () => {
+    let result = [...appState.notes];
+    
+    // Фильтр по важности
+    if (appState.showImportantOnly) {
+      result = result.filter(note => note.important);
+    }
+    
+    // Поиск по тексту
+    if (appState.searchQuery.trim()) {
+      const query = appState.searchQuery.toLowerCase();
+      result = result.filter(note => 
+        (note.title && note.title.toLowerCase().includes(query)) ||
+        (note.content && note.content.toLowerCase().includes(query)) ||
+        (note.tags && note.tags.some(tag => tag.toLowerCase().includes(query)))
+      );
+    }
+    
+    appState.filteredNotes = result;
+    renderer.renderNotesList(result);
+  },
+
+  // Инициализация обработчиков фильтров
+  initFilters: () => {
+    if (elements.filterImportant) {
+      elements.filterImportant.addEventListener('change', (e) => {
+        appState.showImportantOnly = e.target.checked;
+        filterHandler.applyFilters();
+      });
+    }
+    
+    if (elements.searchInput) {
+      elements.searchInput.addEventListener('input', (e) => {
+        appState.searchQuery = e.target.value;
+        filterHandler.applyFilters();
+      });
+    }
+  }
+};
+
+// ==================== УВЕДОМЛЕНИЯ ====================
+function showNotification(message, type = 'info') {
+  // Создаем или находим контейнер для уведомлений
+  let container = document.getElementById('notificationContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'notificationContainer';
+    container.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+    `;
+    document.body.appendChild(container);
+  }
+  
+  // Создаем уведомление
+  const notification = document.createElement('div');
+  notification.textContent = message;
+  notification.style.cssText = `
+    padding: 12px 20px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    color: white;
+    font-weight: 500;
+    animation: slideIn 0.3s ease;
+  `;
+  
+  // Цвет в зависимости от типа
+  if (type === 'success') {
+    notification.style.backgroundColor = '#4CAF50';
+  } else if (type === 'error') {
+    notification.style.backgroundColor = '#f44336';
+  } else {
+    notification.style.backgroundColor = '#2196F3';
+  }
+  
+  container.appendChild(notification);
+  
+  // Автоматическое удаление через 3 секунды
+  setTimeout(() => {
+    notification.style.animation = 'slideOut 0.3s ease';
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 300);
+  }, 3000);
+  
+  // Добавляем CSS анимации
+  if (!document.querySelector('#notificationStyles')) {
+    const style = document.createElement('style');
+    style.id = 'notificationStyles';
+    style.textContent = `
+      @keyframes slideIn {
+        from { transform: translateX(100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      @keyframes slideOut {
+        from { transform: translateX(0); opacity: 1; }
+        to { transform: translateX(100%); opacity: 0; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
+
+// ==================== ОСНОВНЫЕ ФУНКЦИИ ====================
+// Загрузить заметки
+async function loadNotes() {
+  appState.notes = await api.getAllNotes();
+  appState.filteredNotes = [...appState.notes];
+  filterHandler.applyFilters();
+}
+
+// Инициализация приложения
+async function initApp() {
+  try {
+    // Скрыть уведомление об ошибке
+    utils.hideElement(elements.errorAlert);
+    
+    // Загрузить заметки
+    await loadNotes();
+    
+    // Настроить обработчики событий
+    if (elements.noteForm) {
+      elements.noteForm.addEventListener('submit', formHandler.handleSubmit);
+    }
+    
+    // Кнопка отмены редактирования
+    const cancelBtn = document.getElementById('cancelEditBtn');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', formHandler.resetForm);
+    }
+    
+    // Инициализировать фильтры
+    filterHandler.initFilters();
+    
+    console.log('Приложение инициализировано успешно!');
+  } catch (error) {
+    console.error('Ошибка инициализации приложения:', error);
+    utils.showElement(elements.errorAlert);
+  }
+}
+
+// ==================== ЗАПУСК ПРИЛОЖЕНИЯ ====================
+// Ждем загрузки DOM
+document.addEventListener('DOMContentLoaded', initApp);
+
+// Экспорт для отладки в консоли
+window.app = {
+  state: appState,
+  api,
+  utils,
+  reload: loadNotes
+};
